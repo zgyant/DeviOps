@@ -1,47 +1,54 @@
-# devi-opps-worker
+<div align="center">
 
-Prebuilt binaries for the **DeviOpps Worker Agent** — a lightweight daemon you deploy on any remote host to give the [DeviOpps dashboard](https://github.com/zgyant/wait-what) full control over that machine without opening inbound firewall ports.
+# ⚡ DeviOpps Worker
 
-The worker establishes an **outbound WebSocket connection** to your dashboard and handles script execution, pipeline runs, cron scheduling, live terminal sessions, and SSH key management entirely on the target host.
+**A lightweight Go agent that connects your servers to the [DeviOpps](https://github.com/zgyant/wait-what) dashboard.**
+
+[![Linux](https://img.shields.io/badge/Linux-amd64%20%7C%20arm64-blue?logo=linux&logoColor=white)](./worker)
+[![macOS](https://img.shields.io/badge/macOS-amd64%20%7C%20arm64-blue?logo=apple&logoColor=white)](./worker)
+[![Windows](https://img.shields.io/badge/Windows-amd64%20%7C%20arm64-blue?logo=windows&logoColor=white)](./worker)
+[![Go](https://img.shields.io/badge/Go-binary-00ADD8?logo=go&logoColor=white)](./worker)
+
+</div>
 
 ---
 
-## Quick Install
+Deploy the worker on any machine you want to manage. It makes an **outbound WebSocket connection** to your dashboard — no inbound ports, no firewall rules. Once connected, it handles script execution, pipeline runs, cron scheduling, and live terminal sessions entirely on-device.
 
-Run this on the machine you want to manage. Requires `curl` or `wget`.
+---
+
+## 🚀 Quick Install
+
+Run this on the machine you want to manage. Auto-detects OS and architecture, downloads the right binary, and saves it as `./worker`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/refs/heads/main/install.sh | sh
 ```
 
-The script auto-detects your OS and architecture, downloads the correct binary, and saves it as `./worker`.
+> **Windows** — run in Git Bash, WSL, or any shell with `curl` available.
 
-**Supported platforms**
-
-| OS      | amd64 | arm64 |
-| ------- | :---: | :---: |
-| Linux   |  ✓   |  ✓   |
-| macOS   |  ✓   |  ✓   |
-| Windows |  ✓   |  ✓   |
-
-> Windows users: run in Git Bash, WSL, or PowerShell with `curl` available.
+| Platform | amd64 | arm64 |
+| :------- | :---: | :---: |
+| Linux    |  ✅   |  ✅   |
+| macOS    |  ✅   |  ✅   |
+| Windows  |  ✅   |  ✅   |
 
 ---
 
-## Manual Download
+## 📦 Manual Download
 
-If you prefer to download the binary yourself, grab the one that matches your platform from the [`worker/`](./worker) directory:
+Prefer to grab a binary directly? Pick yours from the [`worker/`](./worker) directory:
 
-| File | Platform |
-|------|----------|
+| Binary | Platform |
+| :----- | :------- |
 | `deviopps-worker-linux-amd64` | Linux x86_64 |
-| `deviopps-worker-linux-arm64` | Linux ARM64 (e.g. Raspberry Pi, AWS Graviton) |
+| `deviopps-worker-linux-arm64` | Linux ARM64 — Raspberry Pi, AWS Graviton |
 | `deviopps-worker-darwin-amd64` | macOS Intel |
 | `deviopps-worker-darwin-arm64` | macOS Apple Silicon (M1/M2/M3) |
 | `deviopps-worker-windows-amd64.exe` | Windows x86_64 |
 | `deviopps-worker-windows-arm64.exe` | Windows ARM64 |
 
-Then make it executable (Linux/macOS):
+Make it executable and rename it (Linux/macOS):
 
 ```sh
 chmod +x deviopps-worker-linux-amd64
@@ -50,48 +57,46 @@ mv deviopps-worker-linux-amd64 worker
 
 ---
 
-## Setup
+## 🛠 Setup
 
-### 1. Run interactive setup
+### Step 1 — Run interactive setup
 
 ```sh
 ./worker init
 ```
 
-This walks you through a short setup and writes a `.env` file with generated credentials:
+Walks through a short prompt and writes a `.env` file with generated credentials:
 
 ```
-  wait-what worker — setup
+  DeviOpps worker — setup
   ─────────────────────────
 
   Server URL   [http://localhost:3000]: https://your-dashboard.com
   Project ID   []: proj_abc123
-  Worker name  [my-server]:
-  Worker host  [192.168.1.10]:
+  Worker name  [my-server]: prod-web-1
+  Worker host  []: 192.168.1.10
 
   ✓ .env written
 
   Worker ID    : 7f3a1b2c-...
-  Worker Name  : my-server
   Worker Token : 64-char-hex-token
-  Worker Host  : 192.168.1.10
 ```
 
-### 2. Register in the dashboard
+### Step 2 — Register in the dashboard
 
-Copy the **Worker ID** and **Worker Token** from the `init` output and add the worker in your DeviOpps dashboard under **Settings → Workers → Add Worker**.
+Copy the **Worker ID** and **Worker Token** printed by `init` and add the worker in your DeviOpps dashboard under **Settings → Workers → Add Worker**.
 
-### 3. Start the worker
+### Step 3 — Start the worker
 
 ```sh
 ./worker
 ```
 
-The worker connects to the dashboard and immediately appears as **active**. All scripts, pipelines, and terminal sessions routed to this worker will now execute on this machine.
+The worker connects and immediately appears as **active** in the dashboard. All scripts, pipelines, and terminal sessions routed to this worker execute on this machine.
 
 ---
 
-## Running as a Service
+## ⚙️ Running as a Service
 
 ### systemd (Linux)
 
@@ -119,47 +124,34 @@ sudo systemctl enable --now devi-ops-worker
 sudo journalctl -u devi-ops-worker -f   # stream logs
 ```
 
-### macOS launchd
+### macOS
 
 ```sh
-# Keep it simple — run in a tmux/screen session or use a plist
-./worker   # runs in foreground; use tmux to detach
+# Run in a tmux or screen session to keep it alive
+./worker
 ```
 
 ---
 
-## Environment Variables
+## 🔧 Environment Variables
 
-The `.env` file generated by `./worker init` covers all required fields. You can also set these as real environment variables.
+`./worker init` generates and writes all required fields automatically. You can also set them manually as environment variables or in a `.env` file.
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
-| `CLOUD_URL` | No | `ws://localhost:3000/api/workers/socket` | WebSocket URL of the dashboard |
-| `PROJECT_ID` | **Yes** | — | Project ID from the dashboard |
-| `WORKER_ID` | **Yes** | — | Unique worker identifier (generated by `init`) |
-| `WORKER_NAME` | **Yes** | — | Display name shown in the dashboard |
-| `WORKER_TOKEN` | **Yes** | — | Auth token registered in the dashboard |
-| `WORKER_HOST` | No | `""` | Reported host/IP of this machine (display only) |
-| `HEARTBEAT_INTERVAL_MS` | No | `15000` | Heartbeat ping frequency in milliseconds |
+| :------- | :------: | :------ | :---------- |
+| `PROJECT_ID` | ✅ | — | Project ID — find it in the dashboard under Settings → Project |
+| `WORKER_ID` | ✅ | — | Unique worker identifier, generated by `init` |
+| `WORKER_TOKEN` | ✅ | — | Auth token, generated by `init` — register it in the dashboard |
+| `CLOUD_URL` | ✅ | `ws://localhost:3000/api/workers/socket` | WebSocket URL of your dashboard |
+| `WORKER_NAME` | — | hostname | Display name shown in the dashboard |
+| `WORKER_HOST` | — | `""` | IP or hostname of this machine (display only) |
 
 ---
 
-## Updating
+## 🔄 Updating
 
-Re-run the installer to pull the latest binary:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/main/install.sh | sh
-```
-
-Your `.env` file is preserved — just restart the worker after updating.
-
----
-
-## Dashboard
-
-Need the dashboard too? See the [DeviOpps](https://github.com/zgyant/wait-what) repo:
+Re-run the installer — your `.env` is preserved, just restart the worker after:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/zgyant/wait-what/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/refs/heads/main/install.sh | sh
 ```

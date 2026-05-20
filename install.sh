@@ -4,7 +4,7 @@
 # Sets up the dashboard (Docker + Postgres) AND downloads the worker agent.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/zgyant/devi-opps-worker/refs/heads/main/install.sh | sh
 #   — or —
 #   sh install.sh
 # ──────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ set -eu
 REPO="zgyant/devi-opps-worker"
 BRANCH="main"
 BIN_DIR="worker"
-BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/${BIN_DIR}"
+BASE_URL="https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/${BIN_DIR}"
 
 APP_IMAGE="zayantmishra/devi-opps"
 INSTALL_DIR="${DEVI_INSTALL_DIR:-$HOME/.devi-ops}"
