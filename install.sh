@@ -58,12 +58,22 @@ check_docker() {
   step "Checking Docker"
 
   if ! command -v docker >/dev/null 2>&1; then
-    error "Docker is not installed. Visit https://docs.docker.com/get-docker/"
+    error "Docker is not installed. Visit https://docs.docker.com/engine/install/"
   fi
+
+  # Fedora ships Podman; the podman-docker shim exposes 'docker' but lacks
+  # the Compose plugin this installer requires.
+  if docker --version 2>/dev/null | grep -qi podman; then
+    error "Podman detected as 'docker'. This installer requires Docker CE.\n  Install guide: https://docs.docker.com/engine/install/fedora/"
+  fi
+
   log "Docker: $(docker --version | head -n1)"
 
   if ! docker info >/dev/null 2>&1; then
-    error "Docker daemon is not running. Start Docker and retry."
+    if [ "$(id -u)" != "0" ] && ! id -nG 2>/dev/null | grep -qw docker; then
+      error "Cannot connect to Docker daemon. Your user is not in the 'docker' group.\n  Fix: sudo usermod -aG docker \$USER && newgrp docker\n  Then re-run this script."
+    fi
+    error "Docker daemon is not running. Start it with: sudo systemctl start docker"
   fi
   log "Docker daemon is running"
 
@@ -72,7 +82,7 @@ check_docker() {
   elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE="docker-compose"
   else
-    error "Docker Compose not found. Install Docker Desktop or the compose plugin."
+    error "Docker Compose not found.\n  Fedora/RHEL:    sudo dnf install docker-compose-plugin\n  Debian/Ubuntu:  sudo apt install docker-compose-plugin\n  Other:          https://docs.docker.com/compose/install/"
   fi
   log "Compose: $($COMPOSE version --short 2>/dev/null || printf 'found')"
 }
@@ -80,7 +90,14 @@ check_docker() {
 check_ports() {
   step "Checking ports"
   for port in "$APP_PORT" "$DB_PORT"; do
-    if command -v lsof >/dev/null 2>&1 && lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+    _port_used=0
+    if command -v lsof >/dev/null 2>&1; then
+      lsof -Pi ":$port" -sTCP:LISTEN -t >/dev/null 2>&1 && _port_used=1 || true
+    elif command -v ss >/dev/null 2>&1; then
+      # ss is the lsof alternative on Fedora / minimal Linux images
+      ss -tlnp "sport = :${port}" 2>/dev/null | grep -q LISTEN && _port_used=1 || true
+    fi
+    if [ "$_port_used" -eq 1 ]; then
       warn "Port $port already in use — override with PORT= or DB_PORT="
     else
       log "Port $port is free"
@@ -191,36 +208,57 @@ wait_for_app() {
 # PART 2 — Worker agent binary
 # ══════════════════════════════════════════════════════════════════════════════
 
-detect_platform() {
-  step "Detecting platform for worker binary"
+select_worker_binary() {
+  step "Select worker binary to download"
 
+  # Auto-detect a sensible default
   _raw_os="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
-  case "$_raw_os" in
-    linux*)               OS="linux" ;;
-    darwin*)              OS="darwin" ;;
-    msys*|mingw*|cygwin*) OS="windows" ;;
-    *) error "Unsupported OS: $_raw_os — download manually from https://github.com/${REPO}" ;;
-  esac
-
   _raw_arch="$(uname -m 2>/dev/null)"
-  case "$_raw_arch" in
-    x86_64|amd64)  ARCH="amd64" ;;
-    arm64|aarch64) ARCH="arm64" ;;
-    *) error "Unsupported arch: $_raw_arch — download manually from https://github.com/${REPO}" ;;
+  _default=1
+  case "$_raw_os" in
+    linux*)
+      case "$_raw_arch" in
+        x86_64|amd64)  _default=1 ;;
+        arm64|aarch64) _default=2 ;;
+      esac ;;
+    darwin*)
+      case "$_raw_arch" in
+        x86_64|amd64)  _default=3 ;;
+        arm64|aarch64) _default=4 ;;
+      esac ;;
   esac
 
-  log "Platform: ${OS}/${ARCH}"
-}
+  printf "\n"
+  printf "  ${BOLD}1)${NC} Linux   amd64  — most servers, x86_64 VMs\n"
+  printf "  ${BOLD}2)${NC} Linux   arm64  — Raspberry Pi 4, AWS Graviton, Ampere\n"
+  printf "  ${BOLD}3)${NC} macOS   amd64  — Intel Mac\n"
+  printf "  ${BOLD}4)${NC} macOS   arm64  — Apple Silicon (M-series)\n"
+  printf "\n"
 
-resolve_binary() {
-  if [ "$OS" = "windows" ]; then
-    BINARY_NAME="deviopps-worker-windows-${ARCH}.exe"
-    WORKER_BIN="$INSTALL_DIR/worker.exe"
+  if [ ! -t 0 ]; then
+    # Piped / non-interactive (e.g. curl | sh) — fall back to auto-detected default
+    warn "Non-interactive mode — using auto-detected default: option $_default"
+    _choice="$_default"
   else
-    BINARY_NAME="deviopps-worker-${OS}-${ARCH}"
-    WORKER_BIN="$INSTALL_DIR/worker"
+    printf "  Auto-detected default: [${BOLD}%s${NC}]\n" "$_default"
+    printf "  Enter selection [1-4] (press Enter to accept default): "
+    read -r _choice </dev/tty || _choice=""
+    [ -z "$_choice" ] && _choice="$_default"
   fi
+
+  case "$_choice" in
+    1) OS="linux";  ARCH="amd64" ;;
+    2) OS="linux";  ARCH="arm64" ;;
+    3) OS="darwin"; ARCH="amd64" ;;
+    4) OS="darwin"; ARCH="arm64" ;;
+    *) error "Invalid selection '$_choice' — enter a number between 1 and 4" ;;
+  esac
+
+  BINARY_NAME="deviopps-worker-${OS}-${ARCH}"
+  WORKER_BIN="$INSTALL_DIR/worker"
   DOWNLOAD_URL="${BASE_URL}/${BINARY_NAME}"
+
+  log "Selected: ${OS}/${ARCH}  →  $BINARY_NAME"
 }
 
 download_worker() {
@@ -235,10 +273,7 @@ download_worker() {
     error "Neither curl nor wget found — cannot download worker binary"
   fi
 
-  if [ "$OS" != "windows" ]; then
-    chmod +x "$WORKER_BIN"
-  fi
-
+  chmod +x "$WORKER_BIN"
   log "Worker binary saved to $WORKER_BIN"
 }
 
@@ -280,8 +315,7 @@ main() {
   write_env
   start_services
   wait_for_app
-  detect_platform
-  resolve_binary
+  select_worker_binary
   download_worker
   print_summary
 }
